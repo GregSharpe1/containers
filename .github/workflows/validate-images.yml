@@ -1,0 +1,54 @@
+name: Validate Images
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed images
+        id: detect
+        shell: bash
+        run: |
+          matrix="$(BASE_SHA='${{ github.event.pull_request.base.sha }}' HEAD_SHA='${{ github.event.pull_request.head.sha }}' bash scripts/detect-changed-images.sh)"
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
+          if [ "$matrix" = '{"include":[]}' ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.has_changes == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.context }}
+          file: ./${{ matrix.context }}/Dockerfile
+          push: false
+          tags: local/${{ matrix.image }}:pr-${{ github.event.pull_request.number }}
