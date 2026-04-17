@@ -53,7 +53,8 @@ if [ "${FORCE_ALL:-false}" = "true" ]; then
 elif is_valid_commit "${BASE_SHA:-}" && is_valid_commit "${HEAD_SHA:-}"; then
   changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
 elif git rev-parse --verify HEAD >/dev/null 2>&1; then
-  changed_files="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+  # Include files from the root commit so the first push builds images.
+  changed_files="$(git diff-tree --root --no-commit-id --name-only -r HEAD)"
 else
   build_all=true
 fi
