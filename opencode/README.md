@@ -1,6 +1,6 @@
 # opencode
 
-Lightweight base image for OpenCode-related personal tooling.
+Extends `ghcr.io/anomalyco/opencode:latest` and adds `kubectl` for personal tooling.
 
 ## Local Build
 
