@@ -61,9 +61,25 @@ jobs:
         id: config
         shell: bash
         run: |
-          set -a
-          source '${{ matrix.context }}/metadata.env'
-          set +a
+          IMAGE_NAME=''
+          IMAGE_DESCRIPTION=''
+          IMAGE_PLATFORMS=''
+
+          while IFS='=' read -r key value; do
+            [ -n "$key" ] || continue
+
+            case "$key" in
+              IMAGE_NAME)
+                IMAGE_NAME="$value"
+                ;;
+              IMAGE_DESCRIPTION)
+                IMAGE_DESCRIPTION="$value"
+                ;;
+              IMAGE_PLATFORMS)
+                IMAGE_PLATFORMS="$value"
+                ;;
+            esac
+          done < '${{ matrix.context }}/metadata.env'
 
           echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
           echo "image_description=${IMAGE_DESCRIPTION}" >> "$GITHUB_OUTPUT"
