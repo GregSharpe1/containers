@@ -1,6 +1,6 @@
 # opencode
 
-Extends `ghcr.io/anomalyco/opencode:latest` and adds `kubectl` for personal tooling.
+Extends `ghcr.io/anomalyco/opencode` and adds `kubectl` and `gh` for personal tooling.
 
 ## Local Build
 
