@@ -19,5 +19,8 @@ RUN apk add --no-cache curl tar && \
 
 FROM ghcr.io/anomalyco/opencode:1.4.9
 
+# Bun loads native extensions at runtime that expect the glibc loader path.
+RUN apk add --no-cache gcompat libstdc++
+
 COPY --from=tools-downloader /usr/local/bin/kubectl /usr/local/bin/kubectl
 COPY --from=tools-downloader /usr/local/bin/gh /usr/local/bin/gh
