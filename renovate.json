@@ -7,32 +7,12 @@
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/anomalyco/opencode"],
-      "labels": ["opencode"],
-      "automerge": false
+      "labels": ["opencode"]
     },
     {
-      "matchUpdateTypes": ["patch"],
-      "automerge": true
-    }
-  ],
-  "regexManagers": [
-    {
-      "fileMatch": ["opencode/Dockerfile"],
-      "matchStrings": [
-        "ARG KUBECTL_VERSION=v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
-      ],
-      "datasourceTemplate": "github-tags",
-      "depNameTemplate": "kubernetes/kubectl",
-      "extractVersionTemplate": "^v(?<version>.*)$"
-    },
-    {
-      "fileMatch": ["opencode/Dockerfile"],
-      "matchStrings": [
-        "ARG GH_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
-      ],
-      "datasourceTemplate": "github-releases",
-      "depNameTemplate": "cli/cli",
-      "extractVersionTemplate": "^v(?<version>.*)$"
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["alpine", "library/alpine"],
+      "enabled": false
     }
   ]
 }
