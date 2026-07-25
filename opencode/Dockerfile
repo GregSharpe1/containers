@@ -17,7 +17,7 @@ RUN apk add --no-cache curl tar && \
     cp "/tmp/gh_${GH_VERSION}_linux_${gh_arch}/bin/gh" /usr/local/bin/gh && \
     chmod +x /usr/local/bin/gh
 
-FROM ghcr.io/anomalyco/opencode:1.15.10
+FROM ghcr.io/anomalyco/opencode:1.18.5
 
 # Bun loads native extensions at runtime that expect the glibc loader path.
 # Install git for version control operations.
