@@ -67,4 +67,5 @@ GitHub Actions publishes changed images to `ghcr.io/<owner>/<image-name>`.
 ## Image Docs
 
 - [`opencode`](./opencode/README.md)
+- [`slack-bridge`](./slack-bridge/README.md)
 - [`custom-image-1`](./custom-image-1/README.md)
