@@ -22,6 +22,9 @@ Each image directory should contain:
 - `README.md`
 - `metadata.env`
 
+Images may opt into pull-request tests by setting `TEST_TYPE` in `metadata.env`.
+The validation workflow currently supports `TEST_TYPE=go` and runs `go test ./...` from the image directory. Images without `TEST_TYPE` skip the test job.
+
 ## Local Usage
 
 List available images:
