@@ -25,10 +25,12 @@ type config struct {
 }
 
 type bridge struct {
-	cfg         config
-	hc          *http.Client
-	mu          sync.Mutex
-	mapByThread map[string]string
+	cfg          config
+	hc           *http.Client
+	opencodeHC   *http.Client
+	mu           sync.Mutex
+	mapByThread  map[string]string
+	allowedUsers map[string]struct{}
 }
 
 type envelope struct {
@@ -65,6 +67,8 @@ func main() {
 			opencodeUser:   value("OPENCODE_SERVER_USERNAME", "opencode"), opencodePass: os.Getenv("OPENCODE_SERVER_PASSWORD"),
 		},
 		hc: &http.Client{Timeout: 60 * time.Second}, mapByThread: make(map[string]string),
+		opencodeHC:   &http.Client{Timeout: duration("OPENCODE_REQUEST_TIMEOUT", 30*time.Minute)},
+		allowedUsers: parseAllowedUsers(os.Getenv("SLACK_ALLOWED_USER_IDS")),
 	}
 	go func() {
 		http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -124,7 +128,7 @@ func (b *bridge) run() error {
 			log.Printf("invalid event: %v", err)
 			continue
 		}
-		if c.Type != "event_callback" || c.Event.Type != "app_mention" || c.Event.BotID != "" || (b.cfg.slackChannelID != "" && c.Event.Channel != b.cfg.slackChannelID) {
+		if c.Type != "event_callback" || c.Event.Type != "app_mention" || c.Event.BotID != "" || !b.isAllowedUser(c.Event.User) || (b.cfg.slackChannelID != "" && c.Event.Channel != b.cfg.slackChannelID) {
 			continue
 		}
 		go b.handle(c.Event.Channel, c.Event.TS, c.Event.ThreadTS, c.Event.Text)
@@ -200,7 +204,11 @@ func (b *bridge) openCode(method, path string, body []byte, result any) error {
 	if b.cfg.opencodePass != "" {
 		req.SetBasicAuth(b.cfg.opencodeUser, b.cfg.opencodePass)
 	}
-	res, err := b.hc.Do(req)
+	client := b.hc
+	if b.opencodeHC != nil {
+		client = b.opencodeHC
+	}
+	res, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -250,4 +258,28 @@ func value(name, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func duration(name string, fallback time.Duration) time.Duration {
+	value := value(name, fallback.String())
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		log.Fatalf("%s must be a positive duration: %s", name, value)
+	}
+	return parsed
+}
+
+func parseAllowedUsers(value string) map[string]struct{} {
+	users := make(map[string]struct{})
+	for _, user := range strings.Split(value, ",") {
+		if user = strings.TrimSpace(user); user != "" {
+			users[user] = struct{}{}
+		}
+	}
+	return users
+}
+
+func (b *bridge) isAllowedUser(user string) bool {
+	_, allowed := b.allowedUsers[user]
+	return allowed
 }
