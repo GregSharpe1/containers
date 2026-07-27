@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -85,4 +87,42 @@ func TestPromptCollectsTextParts(t *testing.T) {
 	if got != "hello world" {
 		t.Fatalf("prompt response = %q, want %q", got, "hello world")
 	}
+}
+
+func TestReactAcknowledgesMessage(t *testing.T) {
+	var gotMethod, gotPath, gotAuthorization string
+	var gotBody map[string]string
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		gotMethod = request.Method
+		gotPath = request.URL.Path
+		gotAuthorization = request.Header.Get("Authorization")
+		if err := json.NewDecoder(request.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(`{"ok":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	b := &bridge{cfg: config{slackBotToken: "token"}, hc: client}
+	if err := b.react("C123", "123.456", "eyes"); err != nil {
+		t.Fatalf("react: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/reactions.add" {
+		t.Fatalf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotAuthorization != "Bearer token" {
+		t.Fatalf("authorization = %q", gotAuthorization)
+	}
+	if gotBody["channel"] != "C123" || gotBody["timestamp"] != "123.456" || gotBody["name"] != "eyes" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
 }

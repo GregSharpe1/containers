@@ -136,6 +136,9 @@ func (b *bridge) run() error {
 }
 
 func (b *bridge) handle(channel, ts, threadTS, text string) {
+	if err := b.react(channel, ts, "eyes"); err != nil {
+		log.Printf("acknowledging Slack message: %v", err)
+	}
 	text = strings.TrimSpace(mention.ReplaceAllString(text, ""))
 	if text == "" {
 		text = "Please describe what you need help with."
@@ -223,6 +226,32 @@ func (b *bridge) openCode(method, path string, body []byte, result any) error {
 func (b *bridge) post(channel, thread, text string) error {
 	body, _ := json.Marshal(map[string]string{"channel": channel, "thread_ts": thread, "text": text})
 	req, err := http.NewRequest(http.MethodPost, "https://slack.com/api/chat.postMessage", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+b.cfg.slackBotToken)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := b.hc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	var result struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return err
+	}
+	if !result.OK {
+		return errors.New(result.Error)
+	}
+	return nil
+}
+
+func (b *bridge) react(channel, ts, name string) error {
+	body, _ := json.Marshal(map[string]string{"channel": channel, "timestamp": ts, "name": name})
+	req, err := http.NewRequest(http.MethodPost, "https://slack.com/api/reactions.add", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
