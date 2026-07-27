@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -118,6 +119,81 @@ func TestReactAcknowledgesMessage(t *testing.T) {
 	}
 	if gotBody["channel"] != "C123" || gotBody["timestamp"] != "123.456" || gotBody["name"] != "eyes" {
 		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+func TestUnreactRemovesAcknowledgement(t *testing.T) {
+	var gotPath string
+	var gotBody map[string]string
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		gotPath = request.URL.Path
+		if err := json.NewDecoder(request.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(`{"ok":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	b := &bridge{cfg: config{slackBotToken: "token"}, hc: client}
+	if err := b.unreact("C123", "123.456", "eyes"); err != nil {
+		t.Fatalf("unreact: %v", err)
+	}
+	if gotPath != "/api/reactions.remove" {
+		t.Fatalf("request path = %s", gotPath)
+	}
+	if gotBody["channel"] != "C123" || gotBody["timestamp"] != "123.456" || gotBody["name"] != "eyes" {
+		t.Fatalf("body = %#v", gotBody)
+	}
+}
+
+func TestHandleMarksMentionCompleteAfterPostingResponse(t *testing.T) {
+	var actions []string
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		var body string
+		switch request.URL.Path {
+		case "/api/reactions.add", "/api/reactions.remove":
+			var reaction struct {
+				Name string `json:"name"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&reaction); err != nil {
+				t.Fatalf("decode reaction: %v", err)
+			}
+			action := "add:"
+			if request.URL.Path == "/api/reactions.remove" {
+				action = "remove:"
+			}
+			actions = append(actions, action+reaction.Name)
+			body = `{"ok":true}`
+		case "/api/chat.postMessage":
+			actions = append(actions, "post")
+			body = `{"ok":true}`
+		case "/session":
+			body = `{"id":"ses_test"}`
+		case "/session/ses_test/message":
+			body = `{"parts":[{"type":"text","text":"response"}]}`
+		default:
+			t.Fatalf("unexpected request path: %s", request.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	b := &bridge{
+		cfg:         config{slackBotToken: "token", opencodeURL: "http://opencode"},
+		hc:          client,
+		mapByThread: make(map[string]string),
+	}
+
+	b.handle("C123", "123.456", "", "<@U123> help")
+
+	want := []string{"add:eyes", "post", "remove:eyes", "add:white_check_mark"}
+	if !reflect.DeepEqual(actions, want) {
+		t.Fatalf("actions = %#v, want %#v", actions, want)
 	}
 }
 

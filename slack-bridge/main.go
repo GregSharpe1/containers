@@ -161,6 +161,13 @@ func (b *bridge) handle(channel, ts, threadTS, text string) {
 	}
 	if err := b.post(channel, root, response); err != nil {
 		log.Printf("posting Slack response: %v", err)
+		return
+	}
+	if err := b.unreact(channel, ts, "eyes"); err != nil {
+		log.Printf("removing Slack acknowledgement: %v", err)
+	}
+	if err := b.react(channel, ts, "white_check_mark"); err != nil {
+		log.Printf("marking Slack message complete: %v", err)
 	}
 }
 
@@ -250,8 +257,16 @@ func (b *bridge) post(channel, thread, text string) error {
 }
 
 func (b *bridge) react(channel, ts, name string) error {
+	return b.reaction("reactions.add", channel, ts, name)
+}
+
+func (b *bridge) unreact(channel, ts, name string) error {
+	return b.reaction("reactions.remove", channel, ts, name)
+}
+
+func (b *bridge) reaction(method, channel, ts, name string) error {
 	body, _ := json.Marshal(map[string]string{"channel": channel, "timestamp": ts, "name": name})
-	req, err := http.NewRequest(http.MethodPost, "https://slack.com/api/reactions.add", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, "https://slack.com/api/"+method, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
