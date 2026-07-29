@@ -1,6 +1,6 @@
 # opencode
 
-Extends `ghcr.io/anomalyco/opencode` and adds `kubectl` and `gh` for personal tooling.
+Extends `ghcr.io/anomalyco/opencode` and adds `kubectl`, `gh`, and Node.js/npm for personal tooling and npx-based MCP servers.
 
 ## Local Build
 
