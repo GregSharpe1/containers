@@ -38,16 +38,18 @@ type envelope struct {
 	Payload json.RawMessage `json:"payload"`
 }
 type callback struct {
-	Type  string `json:"type"`
-	Event struct {
-		Type     string `json:"type"`
-		Channel  string `json:"channel"`
-		User     string `json:"user"`
-		Text     string `json:"text"`
-		TS       string `json:"ts"`
-		ThreadTS string `json:"thread_ts"`
-		BotID    string `json:"bot_id"`
-	} `json:"event"`
+	Type  string     `json:"type"`
+	Event slackEvent `json:"event"`
+}
+type slackEvent struct {
+	Type     string `json:"type"`
+	Subtype  string `json:"subtype"`
+	Channel  string `json:"channel"`
+	User     string `json:"user"`
+	Text     string `json:"text"`
+	TS       string `json:"ts"`
+	ThreadTS string `json:"thread_ts"`
+	BotID    string `json:"bot_id"`
 }
 type sessionResult struct {
 	ID string `json:"id"`
@@ -128,11 +130,24 @@ func (b *bridge) run() error {
 			log.Printf("invalid event: %v", err)
 			continue
 		}
-		if c.Type != "event_callback" || c.Event.Type != "app_mention" || c.Event.BotID != "" || !b.isAllowedUser(c.Event.User) || (b.cfg.slackChannelID != "" && c.Event.Channel != b.cfg.slackChannelID) {
+		if c.Type != "event_callback" || !b.shouldHandle(c.Event) {
 			continue
 		}
 		go b.handle(c.Event.Channel, c.Event.TS, c.Event.ThreadTS, c.Event.Text)
 	}
+}
+
+func (b *bridge) shouldHandle(event slackEvent) bool {
+	if event.BotID != "" || !b.isAllowedUser(event.User) || (b.cfg.slackChannelID != "" && event.Channel != b.cfg.slackChannelID) {
+		return false
+	}
+	if event.Type == "app_mention" {
+		return true
+	}
+	if event.Type != "message" || event.Subtype != "" || event.ThreadTS == "" {
+		return false
+	}
+	return b.hasSession(event.Channel, event.ThreadTS)
 }
 
 func (b *bridge) handle(channel, ts, threadTS, text string) {
@@ -188,6 +203,12 @@ func (b *bridge) session(channel, thread string) (string, error) {
 	}
 	b.mapByThread[key] = result.ID
 	return result.ID, nil
+}
+
+func (b *bridge) hasSession(channel, thread string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.mapByThread[channel+":"+thread] != ""
 }
 
 func (b *bridge) prompt(sessionID, text string) (string, error) {

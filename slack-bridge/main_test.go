@@ -31,6 +31,33 @@ func TestParseAllowedUsers(t *testing.T) {
 	}
 }
 
+func TestShouldHandleThreadRepliesOnlyForAuthorizedUsersAndStartedThreads(t *testing.T) {
+	b := &bridge{
+		cfg:          config{slackChannelID: "C123"},
+		mapByThread:  map[string]string{"C123:123.456": "ses_test"},
+		allowedUsers: parseAllowedUsers("U123"),
+	}
+
+	if !b.shouldHandle(slackEvent{Type: "app_mention", Channel: "C123", User: "U123", TS: "123.456"}) {
+		t.Fatal("authorized mention should start a thread")
+	}
+	if !b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U123", TS: "123.457", ThreadTS: "123.456"}) {
+		t.Fatal("authorized reply in a started thread should be handled without a mention")
+	}
+	if b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U456", TS: "123.457", ThreadTS: "123.456"}) {
+		t.Fatal("unauthorized reply should not be handled")
+	}
+	if b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U123", TS: "456.789", ThreadTS: "456.000"}) {
+		t.Fatal("reply in an unstarted thread should not be handled")
+	}
+	if b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U123", TS: "456.789"}) {
+		t.Fatal("top-level message without a mention should not be handled")
+	}
+	if b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U123", BotID: "B123", TS: "123.457", ThreadTS: "123.456"}) {
+		t.Fatal("bot reply should not be handled")
+	}
+}
+
 func TestDuration(t *testing.T) {
 	t.Setenv("TEST_TIMEOUT", "1m")
 	if got := duration("TEST_TIMEOUT", 30*time.Second); got != time.Minute {
