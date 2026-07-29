@@ -20,8 +20,8 @@ RUN apk add --no-cache curl tar && \
 FROM ghcr.io/anomalyco/opencode:1.18.5
 
 # Bun loads native extensions at runtime that expect the glibc loader path.
-# Install git for version control operations.
-RUN apk add --no-cache gcompat libstdc++ git
+# Install git for version control operations and Node.js/npm for npx-based MCP servers.
+RUN apk add --no-cache gcompat libstdc++ git nodejs npm
 
 COPY --from=tools-downloader /usr/local/bin/kubectl /usr/local/bin/kubectl
 COPY --from=tools-downloader /usr/local/bin/gh /usr/local/bin/gh
