@@ -58,6 +58,22 @@ func TestShouldHandleThreadRepliesOnlyForAuthorizedUsersAndStartedThreads(t *tes
 	}
 }
 
+func TestShouldHandleDirectMessagesOnlyWhenEnabledAndAuthorized(t *testing.T) {
+	event := slackEvent{Type: "message", Channel: "D123", ChannelType: "im", User: "U123", TS: "123.456"}
+	disabled := &bridge{cfg: config{slackAllowDMs: false}, allowedUsers: parseAllowedUsers("U123")}
+	if disabled.shouldHandle(event) {
+		t.Fatal("direct messages should be ignored when disabled")
+	}
+
+	enabled := &bridge{cfg: config{slackAllowDMs: true}, allowedUsers: parseAllowedUsers("U123")}
+	if !enabled.shouldHandle(event) {
+		t.Fatal("authorized direct message should be handled when enabled")
+	}
+	if enabled.shouldHandle(slackEvent{Type: "message", Channel: "D123", ChannelType: "im", User: "U456", TS: "123.456"}) {
+		t.Fatal("unauthorized direct message should be ignored")
+	}
+}
+
 func TestDuration(t *testing.T) {
 	t.Setenv("TEST_TIMEOUT", "1m")
 	if got := duration("TEST_TIMEOUT", 30*time.Second); got != time.Minute {
@@ -216,11 +232,61 @@ func TestHandleMarksMentionCompleteAfterPostingResponse(t *testing.T) {
 		mapByThread: make(map[string]string),
 	}
 
-	b.handle("C123", "123.456", "", "<@U123> help")
+	b.handle("C123", "channel", "123.456", "", "<@U123> help")
 
 	want := []string{"add:eyes", "post", "remove:eyes", "add:white_check_mark"}
 	if !reflect.DeepEqual(actions, want) {
 		t.Fatalf("actions = %#v, want %#v", actions, want)
+	}
+}
+
+func TestHandleDirectMessagesReuseSessionAndPostWithoutThread(t *testing.T) {
+	sessionCalls := 0
+	var posts []map[string]string
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		var body string
+		switch request.URL.Path {
+		case "/api/reactions.add", "/api/reactions.remove":
+			body = `{"ok":true}`
+		case "/api/chat.postMessage":
+			var post map[string]string
+			if err := json.NewDecoder(request.Body).Decode(&post); err != nil {
+				t.Fatalf("decode post: %v", err)
+			}
+			posts = append(posts, post)
+			body = `{"ok":true}`
+		case "/session":
+			sessionCalls++
+			body = `{"id":"ses_test"}`
+		case "/session/ses_test/message":
+			body = `{"parts":[{"type":"text","text":"response"}]}`
+		default:
+			t.Fatalf("unexpected request path: %s", request.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
+	})}
+	b := &bridge{
+		cfg:         config{slackBotToken: "token", opencodeURL: "http://opencode"},
+		hc:          client,
+		mapByThread: make(map[string]string),
+	}
+
+	b.handle("D123", "im", "123.456", "", "first")
+	b.handle("D123", "im", "123.457", "", "second")
+
+	if sessionCalls != 1 {
+		t.Fatalf("session API calls = %d, want 1", sessionCalls)
+	}
+	if len(posts) != 2 {
+		t.Fatalf("posts = %d, want 2", len(posts))
+	}
+	for _, post := range posts {
+		if post["channel"] != "D123" {
+			t.Fatalf("post channel = %q, want D123", post["channel"])
+		}
+		if _, threaded := post["thread_ts"]; threaded {
+			t.Fatalf("direct message post should not have thread_ts: %#v", post)
+		}
 	}
 }
 
