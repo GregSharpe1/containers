@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 
 type config struct {
 	slackBotToken, slackAppToken, slackChannelID string
+	slackAllowDMs                                bool
 	opencodeURL, opencodeUser, opencodePass      string
 }
 
@@ -42,14 +44,15 @@ type callback struct {
 	Event slackEvent `json:"event"`
 }
 type slackEvent struct {
-	Type     string `json:"type"`
-	Subtype  string `json:"subtype"`
-	Channel  string `json:"channel"`
-	User     string `json:"user"`
-	Text     string `json:"text"`
-	TS       string `json:"ts"`
-	ThreadTS string `json:"thread_ts"`
-	BotID    string `json:"bot_id"`
+	Type        string `json:"type"`
+	Subtype     string `json:"subtype"`
+	Channel     string `json:"channel"`
+	User        string `json:"user"`
+	Text        string `json:"text"`
+	TS          string `json:"ts"`
+	ThreadTS    string `json:"thread_ts"`
+	BotID       string `json:"bot_id"`
+	ChannelType string `json:"channel_type"`
 }
 type sessionResult struct {
 	ID string `json:"id"`
@@ -65,6 +68,7 @@ func main() {
 		cfg: config{
 			slackBotToken: required("SLACK_BOT_TOKEN"), slackAppToken: required("SLACK_APP_TOKEN"),
 			slackChannelID: os.Getenv("SLACK_CHANNEL_ID"),
+			slackAllowDMs:  enabled("SLACK_ALLOW_DMS", false),
 			opencodeURL:    strings.TrimRight(value("OPENCODE_URL", "http://opencode:4096"), "/"),
 			opencodeUser:   value("OPENCODE_SERVER_USERNAME", "opencode"), opencodePass: os.Getenv("OPENCODE_SERVER_PASSWORD"),
 		},
@@ -133,12 +137,18 @@ func (b *bridge) run() error {
 		if c.Type != "event_callback" || !b.shouldHandle(c.Event) {
 			continue
 		}
-		go b.handle(c.Event.Channel, c.Event.TS, c.Event.ThreadTS, c.Event.Text)
+		go b.handle(c.Event.Channel, c.Event.ChannelType, c.Event.TS, c.Event.ThreadTS, c.Event.Text)
 	}
 }
 
 func (b *bridge) shouldHandle(event slackEvent) bool {
-	if event.BotID != "" || !b.isAllowedUser(event.User) || (b.cfg.slackChannelID != "" && event.Channel != b.cfg.slackChannelID) {
+	if event.BotID != "" || !b.isAllowedUser(event.User) {
+		return false
+	}
+	if event.ChannelType == "im" {
+		return b.cfg.slackAllowDMs && event.Type == "message" && event.Subtype == ""
+	}
+	if b.cfg.slackChannelID != "" && event.Channel != b.cfg.slackChannelID {
 		return false
 	}
 	if event.Type == "app_mention" {
@@ -150,7 +160,7 @@ func (b *bridge) shouldHandle(event slackEvent) bool {
 	return b.hasSession(event.Channel, event.ThreadTS)
 }
 
-func (b *bridge) handle(channel, ts, threadTS, text string) {
+func (b *bridge) handle(channel, channelType, ts, threadTS, text string) {
 	if err := b.react(channel, ts, "eyes"); err != nil {
 		log.Printf("acknowledging Slack message: %v", err)
 	}
@@ -158,9 +168,12 @@ func (b *bridge) handle(channel, ts, threadTS, text string) {
 	if text == "" {
 		text = "Please describe what you need help with."
 	}
-	root := threadTS
+	root, replyThread := threadTS, threadTS
 	if root == "" {
-		root = ts
+		root, replyThread = ts, ts
+	}
+	if channelType == "im" {
+		root, replyThread = channel, ""
 	}
 	session, err := b.session(channel, root)
 	var response string
@@ -174,7 +187,7 @@ func (b *bridge) handle(channel, ts, threadTS, text string) {
 	if response == "" {
 		response = "The request completed without a text response."
 	}
-	if err := b.post(channel, root, response); err != nil {
+	if err := b.post(channel, replyThread, response); err != nil {
 		log.Printf("posting Slack response: %v", err)
 		return
 	}
@@ -252,7 +265,11 @@ func (b *bridge) openCode(method, path string, body []byte, result any) error {
 }
 
 func (b *bridge) post(channel, thread, text string) error {
-	body, _ := json.Marshal(map[string]string{"channel": channel, "thread_ts": thread, "text": text})
+	bodyData := map[string]string{"channel": channel, "text": text}
+	if thread != "" {
+		bodyData["thread_ts"] = thread
+	}
+	body, _ := json.Marshal(bodyData)
 	req, err := http.NewRequest(http.MethodPost, "https://slack.com/api/chat.postMessage", bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -323,6 +340,18 @@ func value(name, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func enabled(name string, fallback bool) bool {
+	v := os.Getenv(name)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Fatalf("%s must be a boolean: %s", name, v)
+	}
+	return parsed
 }
 
 func duration(name string, fallback time.Duration) time.Duration {
