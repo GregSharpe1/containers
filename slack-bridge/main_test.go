@@ -290,6 +290,86 @@ func TestHandleDirectMessagesReuseSessionAndPostWithoutThread(t *testing.T) {
 	}
 }
 
+func TestPermissionEventPostsActionsAndInteractiveResponseResumesOpenCode(t *testing.T) {
+	var posted map[string]any
+	var permissionReply map[string]string
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
+		case "/api/chat.postMessage":
+			if err := json.NewDecoder(request.Body).Decode(&posted); err != nil {
+				t.Fatalf("decode Slack post: %v", err)
+			}
+		case "/permission/per_test/reply":
+			if err := json.NewDecoder(request.Body).Decode(&permissionReply); err != nil {
+				t.Fatalf("decode permission reply: %v", err)
+			}
+		default:
+			t.Fatalf("unexpected request: %s", request.URL.Path)
+		}
+		body := `true`
+		if request.URL.Path == "/api/chat.postMessage" {
+			body = `{"ok":true}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
+	})}
+	b := &bridge{
+		cfg:             config{slackBotToken: "token", opencodeURL: "http://opencode"},
+		hc:              client,
+		threadBySession: map[string]conversation{"ses_test": {channel: "C123", thread: "123.456"}},
+		pendingByID:     make(map[string]pendingInteraction),
+		allowedUsers:    parseAllowedUsers("U123"),
+	}
+	properties, _ := json.Marshal(permissionRequest{ID: "per_test", SessionID: "ses_test", Permission: "bash", Patterns: []string{"git status"}})
+	b.handleOpenCodeEvent(openCodeEvent{Type: "permission.asked", Properties: properties})
+
+	if posted["thread_ts"] != "123.456" {
+		t.Fatalf("permission thread = %#v", posted["thread_ts"])
+	}
+	blocks, ok := posted["blocks"].([]any)
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("permission blocks = %#v", posted["blocks"])
+	}
+	interaction := `{"type":"block_actions","user":{"id":"U123"},"channel":{"id":"C123"},"message":{"thread_ts":"123.456"},"actions":[{"action_id":"permission.once","value":"per_test"}]}`
+	encoded, _ := json.Marshal(interaction)
+	b.handleInteraction(encoded)
+	if permissionReply["reply"] != "once" {
+		t.Fatalf("permission reply = %#v", permissionReply)
+	}
+	if _, pending := b.pendingByID["per_test"]; pending {
+		t.Fatal("permission should be removed after a successful response")
+	}
+}
+
+func TestQuestionAnswerResumesOpenCode(t *testing.T) {
+	var questionReply struct {
+		Answers [][]string `json:"answers"`
+	}
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != "/question/que_test/reply" {
+			t.Fatalf("unexpected request: %s", request.URL.Path)
+		}
+		if err := json.NewDecoder(request.Body).Decode(&questionReply); err != nil {
+			t.Fatalf("decode question reply: %v", err)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(`true`)), Header: make(http.Header)}, nil
+	})}
+	request := questionRequest{ID: "que_test", SessionID: "ses_test", Questions: []questionInfo{{Question: "Proceed?", Options: []questionOption{{Label: "Yes"}, {Label: "No"}}}}}
+	b := &bridge{
+		cfg:         config{opencodeURL: "http://opencode"},
+		hc:          client,
+		pendingByID: map[string]pendingInteraction{"que_test": {sessionID: "ses_test", question: &request, answers: make(map[int][]string)}},
+	}
+	if err := b.recordQuestionAnswer("que_test", 0, []string{"Yes"}, false); err != nil {
+		t.Fatalf("record question answer: %v", err)
+	}
+	if !reflect.DeepEqual(questionReply.Answers, [][]string{{"Yes"}}) {
+		t.Fatalf("answers = %#v", questionReply.Answers)
+	}
+	if _, pending := b.pendingByID["que_test"]; pending {
+		t.Fatal("question should be removed after a successful response")
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
