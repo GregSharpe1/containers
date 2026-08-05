@@ -33,13 +33,19 @@ func TestParseAllowedUsers(t *testing.T) {
 
 func TestShouldHandleThreadRepliesOnlyForAuthorizedUsersAndStartedThreads(t *testing.T) {
 	b := &bridge{
-		cfg:          config{slackChannelID: "C123"},
+		cfg:          config{slackChannelIDs: parseIDs("C123,C456")},
 		mapByThread:  map[string]string{"C123:123.456": "ses_test"},
 		allowedUsers: parseAllowedUsers("U123"),
 	}
 
 	if !b.shouldHandle(slackEvent{Type: "app_mention", Channel: "C123", User: "U123", TS: "123.456"}) {
 		t.Fatal("authorized mention should start a thread")
+	}
+	if !b.shouldHandle(slackEvent{Type: "app_mention", Channel: "C456", User: "U123", TS: "123.456"}) {
+		t.Fatal("authorized mention in a second configured channel should start a thread")
+	}
+	if b.shouldHandle(slackEvent{Type: "app_mention", Channel: "C789", User: "U123", TS: "123.456"}) {
+		t.Fatal("mention in an unconfigured channel should be ignored")
 	}
 	if !b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U123", TS: "123.457", ThreadTS: "123.456"}) {
 		t.Fatal("authorized reply in a started thread should be handled without a mention")
