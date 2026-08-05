@@ -14,7 +14,7 @@ To enable direct messages, turn on the app's App Home Messages Tab, subscribe to
 
 `SLACK_ALLOWED_USER_IDS` is a comma-separated list of Slack user IDs. Messages from users not in this list are ignored. An empty list denies all users.
 
-Optional environment: `SLACK_CHANNEL_ID`, `SLACK_ALLOW_DMS` (default `false`), `OPENCODE_URL` (default `http://opencode:4096`), `OPENCODE_REQUEST_TIMEOUT` (default `30m`), `OPENCODE_SERVER_USERNAME`, and `OPENCODE_SERVER_PASSWORD`.
+Optional environment: `SLACK_CHANNEL_ID`, `SLACK_ALLOW_DMS` (default `false`), `OPENCODE_URL` (default `http://opencode:4096`), `OPENCODE_REQUEST_TIMEOUT` (default `30m`), `OPENCODE_SERVER_USERNAME`, and `OPENCODE_SERVER_PASSWORD`. `SLACK_CHANNEL_ID` accepts a comma-separated list of channel IDs; leave it unset to allow all channels.
 
 The bridge exposes `GET /healthz` on port `8080` for Kubernetes probes.
 

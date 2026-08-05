@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,9 +23,10 @@ import (
 )
 
 type config struct {
-	slackBotToken, slackAppToken, slackChannelID string
-	slackAllowDMs                                bool
-	opencodeURL, opencodeUser, opencodePass      string
+	slackBotToken, slackAppToken            string
+	slackChannelIDs                          map[string]struct{}
+	slackAllowDMs                            bool
+	opencodeURL, opencodeUser, opencodePass string
 }
 
 type bridge struct {
@@ -123,7 +125,7 @@ func main() {
 	b := &bridge{
 		cfg: config{
 			slackBotToken: required("SLACK_BOT_TOKEN"), slackAppToken: required("SLACK_APP_TOKEN"),
-			slackChannelID: os.Getenv("SLACK_CHANNEL_ID"),
+			slackChannelIDs: parseIDs(os.Getenv("SLACK_CHANNEL_ID")),
 			slackAllowDMs:  enabled("SLACK_ALLOW_DMS", false),
 			opencodeURL:    strings.TrimRight(value("OPENCODE_URL", "http://opencode:4096"), "/"),
 			opencodeUser:   value("OPENCODE_SERVER_USERNAME", "opencode"), opencodePass: os.Getenv("OPENCODE_SERVER_PASSWORD"),
@@ -133,6 +135,7 @@ func main() {
 		opencodeHC:   &http.Client{Timeout: duration("OPENCODE_REQUEST_TIMEOUT", 30*time.Minute)},
 		allowedUsers: parseAllowedUsers(os.Getenv("SLACK_ALLOWED_USER_IDS")),
 	}
+	log.Printf("starting Slack bridge: channels=%s allowed_users=%d allow_dms=%t opencode_url=%s", formatIDs(b.cfg.slackChannelIDs), len(b.allowedUsers), b.cfg.slackAllowDMs, b.cfg.opencodeURL)
 	go b.watchEvents()
 	go func() {
 		http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -172,6 +175,7 @@ func (b *bridge) run() error {
 		return err
 	}
 	defer socket.Close()
+	log.Printf("connected to Slack Socket Mode")
 	for {
 		_, raw, err := socket.ReadMessage()
 		if err != nil {
@@ -195,6 +199,7 @@ func (b *bridge) run() error {
 		switch c.Type {
 		case "event_callback":
 			if b.shouldHandle(c.Event) {
+				log.Printf("handling Slack event: type=%s channel=%s channel_type=%s user=%s ts=%s thread_ts=%s", c.Event.Type, c.Event.Channel, c.Event.ChannelType, c.Event.User, c.Event.TS, c.Event.ThreadTS)
 				go b.handle(c.Event.Channel, c.Event.ChannelType, c.Event.TS, c.Event.ThreadTS, c.Event.Text)
 			}
 		case "interactive":
@@ -204,14 +209,21 @@ func (b *bridge) run() error {
 }
 
 func (b *bridge) shouldHandle(event slackEvent) bool {
-	if event.BotID != "" || !b.isAllowedUser(event.User) {
+	if event.BotID != "" {
+		return false
+	}
+	if !b.isAllowedUser(event.User) {
+		log.Printf("ignoring Slack event from unauthorized user: type=%s channel=%s user=%s", event.Type, event.Channel, event.User)
 		return false
 	}
 	if event.ChannelType == "im" {
 		return b.cfg.slackAllowDMs && event.Type == "message" && event.Subtype == ""
 	}
-	if b.cfg.slackChannelID != "" && event.Channel != b.cfg.slackChannelID {
-		return false
+	if len(b.cfg.slackChannelIDs) > 0 {
+		if _, allowed := b.cfg.slackChannelIDs[event.Channel]; !allowed {
+			log.Printf("ignoring Slack event from unconfigured channel: type=%s channel=%s configured_channels=%s", event.Type, event.Channel, formatIDs(b.cfg.slackChannelIDs))
+			return false
+		}
 	}
 	if event.Type == "app_mention" {
 		return true
@@ -223,6 +235,7 @@ func (b *bridge) shouldHandle(event slackEvent) bool {
 }
 
 func (b *bridge) handle(channel, channelType, ts, threadTS, text string) {
+	log.Printf("processing Slack message: channel=%s ts=%s thread_ts=%s", channel, ts, threadTS)
 	if err := b.react(channel, ts, "eyes"); err != nil {
 		log.Printf("acknowledging Slack message: %v", err)
 	}
@@ -248,7 +261,7 @@ func (b *bridge) handle(channel, channelType, ts, threadTS, text string) {
 		response, err = b.prompt(session, text)
 	}
 	if err != nil {
-		log.Printf("processing Slack message: %v", err)
+		log.Printf("processing Slack message failed: channel=%s root=%s error=%v", channel, root, err)
 		response = "I could not process that request."
 	}
 	if response == "" {
@@ -271,6 +284,7 @@ func (b *bridge) session(channel, thread string) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if id := b.mapByThread[key]; id != "" {
+		log.Printf("reusing OpenCode session: session=%s channel=%s thread=%s", id, channel, thread)
 		return id, nil
 	}
 	body, _ := json.Marshal(map[string]string{"title": "Slack " + key})
@@ -286,6 +300,7 @@ func (b *bridge) session(channel, thread string) (string, error) {
 	}
 	b.mapByThread[key] = result.ID
 	b.threadBySession[result.ID] = conversation{channel: channel, thread: thread}
+	log.Printf("created OpenCode session: session=%s channel=%s thread=%s", result.ID, channel, thread)
 	return result.ID, nil
 }
 
@@ -745,13 +760,29 @@ func duration(name string, fallback time.Duration) time.Duration {
 }
 
 func parseAllowedUsers(value string) map[string]struct{} {
-	users := make(map[string]struct{})
-	for _, user := range strings.Split(value, ",") {
-		if user = strings.TrimSpace(user); user != "" {
-			users[user] = struct{}{}
+	return parseIDs(value)
+}
+
+func parseIDs(value string) map[string]struct{} {
+	ids := make(map[string]struct{})
+	for _, id := range strings.Split(value, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids[id] = struct{}{}
 		}
 	}
-	return users
+	return ids
+}
+
+func formatIDs(ids map[string]struct{}) string {
+	if len(ids) == 0 {
+		return "all"
+	}
+	values := make([]string, 0, len(ids))
+	for id := range ids {
+		values = append(values, id)
+	}
+	sort.Strings(values)
+	return strings.Join(values, ",")
 }
 
 func (b *bridge) isAllowedUser(user string) bool {
