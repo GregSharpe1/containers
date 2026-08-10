@@ -72,6 +72,10 @@ type slackEvent struct {
 	BotID       string `json:"bot_id"`
 	ChannelType string `json:"channel_type"`
 }
+type slackThreadMessage struct {
+	TS   string `json:"ts"`
+	Text string `json:"text"`
+}
 type sessionResult struct {
 	ID string `json:"id"`
 }
@@ -255,6 +259,14 @@ func (b *bridge) handle(channel, channelType, ts, threadTS, text string) {
 		_ = b.react(channel, ts, "white_check_mark")
 		return
 	}
+	if threadTS != "" && !b.hasSession(channel, root) {
+		context, err := b.threadContext(channel, root, ts)
+		if err != nil {
+			log.Printf("loading Slack thread context: channel=%s thread=%s error=%v", channel, root, err)
+		} else if context != "" {
+			text = "Slack thread context (messages before this request):\n" + context + "\n\nCurrent request:\n" + text
+		}
+	}
 	session, err := b.session(channel, root)
 	var response string
 	if err == nil {
@@ -308,6 +320,46 @@ func (b *bridge) hasSession(channel, thread string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.mapByThread[channel+":"+thread] != ""
+}
+
+func (b *bridge) threadContext(channel, thread, currentTS string) (string, error) {
+	endpoint, _ := url.Parse("https://slack.com/api/conversations.replies")
+	query := endpoint.Query()
+	query.Set("channel", channel)
+	query.Set("ts", thread)
+	endpoint.RawQuery = query.Encode()
+	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+b.cfg.slackBotToken)
+	res, err := b.hc.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return "", fmt.Errorf("Slack conversations.replies HTTP %s", res.Status)
+	}
+	var result struct {
+		OK       bool                 `json:"ok"`
+		Error    string               `json:"error"`
+		Messages []slackThreadMessage `json:"messages"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if !result.OK {
+		return "", fmt.Errorf("Slack conversations.replies: %s", result.Error)
+	}
+	var messages []string
+	for _, message := range result.Messages {
+		if message.TS == currentTS || strings.TrimSpace(message.Text) == "" {
+			continue
+		}
+		messages = append(messages, fmt.Sprintf("[%s] %s", message.TS, strings.TrimSpace(message.Text)))
+	}
+	return strings.Join(messages, "\n"), nil
 }
 
 func (b *bridge) prompt(sessionID, text string) (string, error) {

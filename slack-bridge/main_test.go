@@ -246,6 +246,54 @@ func TestHandleMarksMentionCompleteAfterPostingResponse(t *testing.T) {
 	}
 }
 
+func TestHandleInitialThreadMentionIncludesPriorThreadMessages(t *testing.T) {
+	var prompt struct {
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	}
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		var body string
+		switch request.URL.Path {
+		case "/api/reactions.add", "/api/reactions.remove", "/api/chat.postMessage":
+			body = `{"ok":true}`
+		case "/api/conversations.replies":
+			if request.Method != http.MethodGet || request.URL.Query().Get("channel") != "C123" || request.URL.Query().Get("ts") != "123.456" {
+				t.Fatalf("thread context request = %s %s", request.Method, request.URL.String())
+			}
+			if request.Header.Get("Authorization") != "Bearer token" {
+				t.Fatalf("thread context authorization = %q", request.Header.Get("Authorization"))
+			}
+			body = `{"ok":true,"messages":[{"ts":"123.456","text":"alert details"},{"ts":"123.457","text":"prior reply"},{"ts":"123.458","text":"<@U123> investigate this"}]}`
+		case "/session":
+			body = `{"id":"ses_test"}`
+		case "/session/ses_test/message":
+			if err := json.NewDecoder(request.Body).Decode(&prompt); err != nil {
+				t.Fatalf("decode prompt: %v", err)
+			}
+			body = `{"parts":[{"type":"text","text":"response"}]}`
+		default:
+			t.Fatalf("unexpected request path: %s", request.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
+	})}
+	b := &bridge{
+		cfg:         config{slackBotToken: "token", opencodeURL: "http://opencode"},
+		hc:          client,
+		mapByThread: make(map[string]string),
+	}
+
+	b.handle("C123", "channel", "123.458", "123.456", "<@U123> investigate this")
+
+	if len(prompt.Parts) != 1 {
+		t.Fatalf("prompt parts = %#v", prompt.Parts)
+	}
+	want := "Slack thread context (messages before this request):\n[123.456] alert details\n[123.457] prior reply\n\nCurrent request:\ninvestigate this"
+	if prompt.Parts[0].Text != want {
+		t.Fatalf("prompt = %q, want %q", prompt.Parts[0].Text, want)
+	}
+}
+
 func TestHandleDirectMessagesReuseSessionAndPostWithoutThread(t *testing.T) {
 	sessionCalls := 0
 	var posts []map[string]string
