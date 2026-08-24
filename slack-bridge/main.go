@@ -241,6 +241,11 @@ func (b *bridge) shouldHandle(event slackEvent) bool {
 	if event.Type != "message" || event.Subtype != "" || event.ThreadTS == "" {
 		return false
 	}
+	// Slack also delivers a mentioned message through message.channels; the
+	// corresponding app_mention event above is the single source of truth.
+	if mention.MatchString(event.Text) {
+		return false
+	}
 	return b.hasSession(event.Channel, event.ThreadTS)
 }
 

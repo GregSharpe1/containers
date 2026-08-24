@@ -50,6 +50,9 @@ func TestShouldHandleThreadRepliesOnlyForAuthorizedUsersAndStartedThreads(t *tes
 	if !b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U123", TS: "123.457", ThreadTS: "123.456"}) {
 		t.Fatal("authorized reply in a started thread should be handled without a mention")
 	}
+	if b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U123", Text: "<@U999> investigate", TS: "123.458", ThreadTS: "123.456"}) {
+		t.Fatal("mentioned message should be handled only through app_mention")
+	}
 	if b.shouldHandle(slackEvent{Type: "message", Channel: "C123", User: "U456", TS: "123.457", ThreadTS: "123.456"}) {
 		t.Fatal("unauthorized reply should not be handled")
 	}
