@@ -54,6 +54,7 @@ type pendingInteraction struct {
 
 type envelope struct {
 	ID      string          `json:"envelope_id"`
+	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
 }
 type callback struct {
@@ -195,20 +196,25 @@ func (b *bridge) run() error {
 		if err := socket.WriteJSON(map[string]string{"envelope_id": e.ID}); err != nil {
 			return err
 		}
-		var c callback
-		if err := json.Unmarshal(e.Payload, &c); err != nil {
-			log.Printf("invalid event: %v", err)
-			continue
-		}
-		switch c.Type {
-		case "event_callback":
-			if b.shouldHandle(c.Event) {
-				log.Printf("handling Slack event: type=%s channel=%s channel_type=%s user=%s ts=%s thread_ts=%s", c.Event.Type, c.Event.Channel, c.Event.ChannelType, c.Event.User, c.Event.TS, c.Event.ThreadTS)
-				go b.handle(c.Event.Channel, c.Event.ChannelType, c.Event.TS, c.Event.ThreadTS, c.Event.Text)
-			}
-		case "interactive":
-			go b.handleInteraction(c.Payload)
-		}
+		b.handleEnvelope(e)
+	}
+}
+
+func (b *bridge) handleEnvelope(e envelope) {
+	// Socket Mode puts the interaction type on the envelope; its payload is the
+	// block_actions body itself, rather than an event_callback wrapper.
+	if e.Type == "interactive" {
+		go b.handleInteraction(e.Payload)
+		return
+	}
+	var c callback
+	if err := json.Unmarshal(e.Payload, &c); err != nil {
+		log.Printf("invalid event: %v", err)
+		return
+	}
+	if c.Type == "event_callback" && b.shouldHandle(c.Event) {
+		log.Printf("handling Slack event: type=%s channel=%s channel_type=%s user=%s ts=%s thread_ts=%s", c.Event.Type, c.Event.Channel, c.Event.ChannelType, c.Event.User, c.Event.TS, c.Event.ThreadTS)
+		go b.handle(c.Event.Channel, c.Event.ChannelType, c.Event.TS, c.Event.ThreadTS, c.Event.Text)
 	}
 }
 

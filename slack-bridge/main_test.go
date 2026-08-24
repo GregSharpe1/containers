@@ -394,6 +394,45 @@ func TestPermissionEventPostsActionsAndInteractiveResponseResumesOpenCode(t *tes
 	}
 }
 
+func TestSocketModeInteractiveEnvelopeResumesOpenCode(t *testing.T) {
+	permissionReply := make(chan map[string]string, 1)
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
+		case "/permission/per_test/reply":
+			var reply map[string]string
+			if err := json.NewDecoder(request.Body).Decode(&reply); err != nil {
+				t.Fatalf("decode permission reply: %v", err)
+			}
+			permissionReply <- reply
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(`true`)), Header: make(http.Header)}, nil
+		case "/api/chat.postMessage":
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString(`{"ok":true}`)), Header: make(http.Header)}, nil
+		default:
+			t.Fatalf("unexpected request: %s", request.URL.Path)
+			return nil, nil
+		}
+	})}
+	b := &bridge{
+		cfg:             config{opencodeURL: "http://opencode"},
+		hc:              client,
+		pendingByID:     map[string]pendingInteraction{"per_test": {sessionID: "ses_test"}},
+		allowedUsers:    parseAllowedUsers("U123"),
+	}
+	var socketEnvelope envelope
+	if err := json.Unmarshal([]byte(`{"envelope_id":"env_test","type":"interactive","payload":{"type":"block_actions","user":{"id":"U123"},"channel":{"id":"C123"},"message":{"thread_ts":"123.456"},"actions":[{"action_id":"permission.once","value":"per_test"}]}}`), &socketEnvelope); err != nil {
+		t.Fatalf("decode Socket Mode envelope: %v", err)
+	}
+	b.handleEnvelope(socketEnvelope)
+	select {
+	case reply := <-permissionReply:
+		if reply["reply"] != "once" {
+			t.Fatalf("permission reply = %#v", reply)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Socket Mode interaction did not resume OpenCode")
+	}
+}
+
 func TestQuestionAnswerResumesOpenCode(t *testing.T) {
 	var questionReply struct {
 		Answers [][]string `json:"answers"`
