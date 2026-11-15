@@ -1,5 +1,6 @@
 FROM alpine:3.21 AS tools-downloader
 
+# renovate: datasource=github-tags depName=kubernetes/kubernetes
 ARG KUBECTL_VERSION=v1.35.0
 ARG GH_VERSION=2.90.0
 ARG TARGETARCH
