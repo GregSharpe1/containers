@@ -23,7 +23,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": ["/(^|/)Dockerfile$/"],
+      "fileMatch": ["(^|/)Dockerfile$"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[^ ]+) depName=(?<depName>[^ ]+)\\nARG KUBECTL_VERSION=v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
