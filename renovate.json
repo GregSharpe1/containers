@@ -20,6 +20,21 @@
       "labels": ["hermes-agent"]
     },
     {
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": [
+        "helm/helm",
+        "kubernetes-sigs/kustomize",
+        "jqlang/jq",
+        "astral-sh/uv"
+      ],
+      "labels": ["hermes-agent"]
+    },
+    {
+      "matchDatasources": ["github-tags"],
+      "matchPackageNames": ["tfutils/tfenv"],
+      "labels": ["hermes-agent"]
+    },
+    {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["alpine", "library/alpine"],
       "enabled": false
@@ -42,6 +57,56 @@
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "cli/cli",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=helm/helm\\nARG HELM_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "helm/helm",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=kubernetes-sigs/kustomize\\nARG KUSTOMIZE_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "kubernetes-sigs/kustomize",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=jqlang/jq\\nARG JQ_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "jqlang/jq",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=astral-sh/uv\\nARG UV_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "astral-sh/uv",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=github-tags depName=tfutils/tfenv\\nARG TFENV_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "tfutils/tfenv",
       "versioningTemplate": "semver-coerced"
     }
   ]

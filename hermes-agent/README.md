@@ -1,8 +1,8 @@
 # hermes-agent
 
-Extends `nousresearch/hermes-agent` with pinned `kubectl` and GitHub CLI (`gh`) clients for read-only Kubernetes investigations and GitHub-based workflows.
+Extends `nousresearch/hermes-agent` with pinned Kubernetes, GitHub, infrastructure, JSON, Python, and Terraform version-management CLIs: `kubectl`, `gh`, `helm`, `kustomize`, `jq`, `uv`, and `tfenv`.
 
-The image downloads kubectl and GitHub CLI binaries for the target architecture, verifies their published SHA-256 checksums, and runs command smoke checks during the image build.
+The image downloads architecture-specific binaries, verifies published SHA-256 checksums where available, installs tfenv at a pinned tag, and runs command smoke checks during the image build.
 
 ## Local Build
 
