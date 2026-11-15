@@ -25,6 +25,7 @@ RUN apk add --no-cache ca-certificates curl tar && \
 FROM nousresearch/hermes-agent:v0.23.1
 
 COPY --from=kubectl-downloader /usr/local/bin/kubectl /usr/local/bin/kubectl
+COPY --from=kubectl-downloader /usr/local/bin/gh /usr/local/bin/gh
 
 # Fail the image build if either the base agent or the added client is unusable.
 RUN hermes --help >/dev/null && kubectl version --client=true && gh --version
