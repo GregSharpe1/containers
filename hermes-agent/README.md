@@ -1,8 +1,8 @@
 # hermes-agent
 
-Extends `nousresearch/hermes-agent` with a pinned `kubectl` client for read-only Kubernetes investigations.
+Extends `nousresearch/hermes-agent` with pinned `kubectl` and GitHub CLI (`gh`) clients for read-only Kubernetes investigations and GitHub-based workflows.
 
-The image downloads the kubectl binary for the target architecture, verifies its published SHA-256 checksum, and runs command smoke checks during the image build.
+The image downloads kubectl and GitHub CLI binaries for the target architecture, verifies their published SHA-256 checksums, and runs command smoke checks during the image build.
 
 ## Local Build
 

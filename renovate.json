@@ -15,6 +15,11 @@
       "labels": ["hermes-agent"]
     },
     {
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["cli/cli"],
+      "labels": ["hermes-agent"]
+    },
+    {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["alpine", "library/alpine"],
       "enabled": false
@@ -27,6 +32,16 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[^ ]+) depName=(?<depName>[^ ]+)\\nARG KUBECTL_VERSION=v(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=cli/cli\\nARG GH_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "cli/cli",
       "versioningTemplate": "semver-coerced"
     }
   ]
