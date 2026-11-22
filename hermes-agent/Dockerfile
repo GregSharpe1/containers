@@ -59,7 +59,8 @@ RUN apk add --no-cache ca-certificates curl git tar && \
     git clone --depth 1 --branch "v${TFENV_VERSION}" https://github.com/tfutils/tfenv.git /opt/tfenv && \
     chmod +x /opt/tfenv/bin/tfenv
 
-FROM nousresearch/hermes-agent:v0.23.1
+# Temporary PR image carrying Slack alert fingerprinting; replace with the merged release image after validation.
+FROM ghcr.io/gregsharpe-bot/hermes-agent:pr-158913-ab75bc19db22f8e61c038612ae0ea5b27023c605@sha256:08189be203f7943d2d88bebe8a1527fdb1196e4509f2165f5fdd813bcd21f428
 
 ENV TFENV_ROOT=/opt/tfenv
 
